@@ -8,10 +8,16 @@
 #include <string.h>
 
 // Defined Constants
-#define TEMPPIN 2 // The digital pin on the Arduino that the thermometer connects to
+#define TEMPPIN 2 // digital pin that the thermometer connects to
 #define PITOTPIN A0 // pin for the pitot tube
+#define BUZZERPIN A1 // buzzer pin
+#define VP A2 // positive side of the voltmeter
+#define VN A3 // negative side of the voltmeter
 #define DECLINATION 12.5 // Princeton, NJ (degrees)
 // #define DECLINATION 4.2167 // Stephenville, Tx (degrees)
+#define DSTATE 0 // Dormant
+#define TSTATE 1 // Transmitting
+#define LSTATE 2 // Landed
 
 // Sensor/Global Variable Declarations
 Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345); // magnetometer
@@ -22,7 +28,7 @@ int offset;
 int t_pwr_up; // time of power-up
 int pkt_cnt = 0;
 String pkt;
-int state;
+short state = DSTATE; // Change to DSTATE after testing
 int pic_cnt; // number of pictures taken
 
 void setup() {
@@ -33,25 +39,45 @@ void setup() {
   mag.begin(); // mag sensor
   baseline = pressure();  
 
-    // Setup for pitot tube (copied from example code)
-    int i=0;
-    int sum=0;
-    offset=0;
-    int sensorValue;
-    Serial.println("init...");
-    for(i=0;i<10;i++)
-    {
-         sensorValue = analogRead(PITOTPIN)-512;
-         sum+=sensorValue;
-    }
-    offset=sum/10.0;
+  // Setup for pitot tube (copied from example code)
+  int i=0;
+  int sum=0;
+  offset=0;
+  int sensorValue;
+  for(i=0;i<10;i++)
+  {
+       sensorValue = analogRead(PITOTPIN)-512;
+       sum+=sensorValue;
+  }
+  offset=sum/10.0;
   
 }
 
 void loop() {
-  Serial.println(packet());
   
-  delay(500);
+  switch(state){
+    case DSTATE: // dormant
+        break;
+    case TSTATE: // transmitting
+      Serial.println(packet());
+      delay(500);
+      break;
+    case LSTATE: // landed
+      audio(); // play a sound
+      break;
+  }
+}
+
+// This method is written to make testing easier.
+// It should be rewritten after testing is done.
+// Called when Serial recieves data
+// Sets state to the specified value
+void serialEvent()
+{
+  String input = Serial.readStringUntil('\n');  // read new token
+  if (input == "Dormant")  state = DSTATE;
+  else if (input == "Transmitting")  state = TSTATE;
+  else if (input == "Landed")  state = LSTATE;
 }
 
 // Reads sensor data and generates a packet String
@@ -81,16 +107,26 @@ int rlt()
   return 0;
 }
 
-// converts int state into a String
+// converts state into a String
 String stateToString()
 {
-    return "STATE";  
+  switch(state){
+    case DSTATE:
+      return "Dormant";
+      break;
+    case TSTATE:
+      return "Transmitting";
+      break;
+    case LSTATE:
+      return "Landed";
+      break;  
+  }
 }
 
 // voltage in volts
 double vltg()
 {
-    return 0.0;  
+    return (analogRead(VP) - analogRead(VN)) * 5.0 / 1024; // 5/1024 converts to volts  
 }
 
 // Sample time, altitude, pressure, speed, temp, voltage, heading, camera
@@ -127,13 +163,12 @@ double alt(double P) {
 
 // in m/s
 double spd(){
-  return 0.0;
-  /*double sensorValue = analogRead(PITOTPIN)-offset; 
+  double sensorValue = analogRead(PITOTPIN)-offset; 
   int P=(5*sensorValue)/1024.0 - 2.5;
   P *= 1000; // in Pa
 
   double speed = sqrt((2/1.225)*P);
-  return speed;*/
+  return speed;
 }
 
 // in mb
@@ -194,4 +229,20 @@ double pressure()
     else Serial.println("error retrieving temperature measurement\n");
   }
   else Serial.println("error starting temperature measurement\n");
+}
+
+// Plays a sound
+void audio()
+{
+  int f, d;
+
+  // Loop through all the Serial input
+  while(Serial.peek() != -1){
+      f = Serial.parseInt(); // frequency
+      d = Serial.parseInt(); // duration
+      
+      tone(BUZZERPIN, f, d); // play the sound
+      delay(d);
+  }  
+  if(Serial.peek() == -1) tone(BUZZERPIN, 4000, 100);
 }
