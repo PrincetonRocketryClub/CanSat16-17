@@ -9,15 +9,21 @@
 
 // Defined Constants
 #define TEMPPIN 2 // digital pin that the thermometer connects to
-#define PITOTPIN A0 // pin for the pitot tube
-#define BUZZERPIN A1 // buzzer pin
+#define PITOTPIN A4 // pin for the pitot tube
+#define BUZZERPIN 3 // buzzer pin
 #define VP A2 // positive side of the voltmeter
 #define VN A3 // negative side of the voltmeter
+#define RTC_ADDRESS 0x68
+#define EEPROM_ADDRESS 0x50
 #define DECLINATION 12.5 // Princeton, NJ (degrees)
 // #define DECLINATION 4.2167 // Stephenville, Tx (degrees)
 #define DSTATE 0 // Dormant
 #define TSTATE 1 // Transmitting
 #define LSTATE 2 // Landed
+#define SERIAL Serial // Which Serial port we're using
+#define SERIALEVENT serialEvent
+#define BAUD 9600 // for USB Serial
+#define V_REF 2.56 // internal reference voltage
 
 // Sensor/Global Variable Declarations
 Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345); // magnetometer
@@ -28,12 +34,12 @@ int offset;
 int t_pwr_up; // time of power-up
 int pkt_cnt = 0;
 String pkt;
-short state = DSTATE; // Change to DSTATE after testing
+short state = TSTATE; // Change to DSTATE after testing
 int pic_cnt; // number of pictures taken
 
 void setup() {
-  Serial.begin(9600);
-  t_pwr_up = rlt(); 
+  rst_rtc(); // reset the rtc to 0
+  t_pwr_up = rtc(); // store the time of power-up
   dht.begin(); // thermometer
   bmp.begin(); // Pressure/Altitude sensor
   mag.begin(); // mag sensor
@@ -50,16 +56,14 @@ void setup() {
        sum+=sensorValue;
   }
   offset=sum/10.0;
-  
 }
 
 void loop() {
-  
   switch(state){
     case DSTATE: // dormant
         break;
     case TSTATE: // transmitting
-      Serial.println(packet());
+      SERIAL.println(packet());
       delay(500);
       break;
     case LSTATE: // landed
@@ -72,9 +76,9 @@ void loop() {
 // It should be rewritten after testing is done.
 // Called when Serial recieves data
 // Sets state to the specified value
-void serialEvent()
+void SERIALEVENT()
 {
-  String input = Serial.readStringUntil('\n');  // read new token
+  String input = SERIAL.readStringUntil('\n');  // read new token
   if (input == "Dormant")  state = DSTATE;
   else if (input == "Transmitting")  state = TSTATE;
   else if (input == "Landed")  state = LSTATE;
@@ -86,7 +90,7 @@ String packet()
   pkt_cnt++; // increment packet count
   
   String p = "4234,GLIDER,"; // team_id,GLIDER
-  p += String(rlt() - t_pwr_up) + ","; // MISSION TIME,
+  p += String(rtc() - t_pwr_up) + ","; // MISSION TIME,
   p += String(pkt_cnt) + ",";
   int P = pressure(); // read pressure
   p += String(alt(P)) + ",";
@@ -97,14 +101,75 @@ String packet()
   p += String(heading()) + ",";
   p += stateToString() + ",";
   p += String(pic_cnt);
-
+  
   return p;
 }
 
 // real-time clock reading in seconds
-int rlt()
+int rtc()
 {
-  return 0;
+  // Step 1: Set address pointer to the first register
+  Wire.beginTransmission(RTC_ADDRESS);
+  Wire.write((byte)0x00);
+  Wire.endTransmission();
+
+  // Step 2: Convert seconds, minutes, and hours to seconds
+  Wire.requestFrom(RTC_ADDRESS, 7);
+  int time = bcdToDec(Wire.read()); // read seconds
+  time += 60 * bcdToDec(Wire.read()); // read minutes
+  time += 3600 * bcdToDec(Wire.read()); // read hours
+
+  return time; // time is the time since power-up in seconds
+}
+
+// Converts binary coded decimals to decimals
+int bcdToDec(byte value)
+{
+  return (value / 16 * 10) + (value % 16);
+}
+
+// reset the rtc to 0
+// Adapted from example code
+void rst_rtc()
+{
+  byte zero = 0x00;
+  Wire.beginTransmission(RTC_ADDRESS);
+  Wire.write(zero); // sets the address pointer to zero
+
+  Wire.write(zero); // set successive registers to 0
+  Wire.write(zero);
+  Wire.write(zero);
+  Wire.write(zero);
+  Wire.write(zero);
+  Wire.write(zero);
+  Wire.write(zero);
+
+  Wire.endTransmission();
+}
+
+// Read from EEPROM
+byte eeRead(unsigned int address)
+{
+  // Set pointer to address
+  Wire.beginTransmission(EEPROM_ADDRESS);
+  Wire.write(address >> 8); // Most significant byte
+  Wire.write(address & 0xFF); // Least significant byte
+  Wire.endTransmission();
+
+  Wire.requestFrom(EEPROM_ADDRESS, 1);
+  return Wire.read();
+}
+
+// Write to EEPROM
+void eeWrite(unsigned int address, byte data)
+{
+  Wire.beginTransmission(EEPROM_ADDRESS);
+  Wire.write(address >> 8); // Most significant byte
+  Wire.write(address & 0xFF); // Least significant byte
+  Wire.write(data);
+  Wire.endTransmission();
+
+  delay(6);
 }
 
 // converts state into a String
@@ -126,7 +191,7 @@ String stateToString()
 // voltage in volts
 double vltg()
 {
-    return (analogRead(VP) - analogRead(VN)) * 5.0 / 1024; // 5/1024 converts to volts  
+    return (analogRead(VP) - analogRead(VN)) * V_REF / 1023; // OP_VLTG/1023 converts to volts  
 }
 
 // Sample time, altitude, pressure, speed, temp, voltage, heading, camera
@@ -222,13 +287,9 @@ double pressure()
         {
           return(P);
         }
-        else Serial.println("error retrieving pressure measurement\n");
       }
-      else Serial.println("error starting pressure measurement\n");
     }
-    else Serial.println("error retrieving temperature measurement\n");
   }
-  else Serial.println("error starting temperature measurement\n");
 }
 
 // Plays a sound
@@ -237,12 +298,12 @@ void audio()
   int f, d;
 
   // Loop through all the Serial input
-  while(Serial.peek() != -1){
-      f = Serial.parseInt(); // frequency
-      d = Serial.parseInt(); // duration
+  while(SERIAL.peek() != -1){
+      f = SERIAL.parseInt(); // frequency
+      d = SERIAL.parseInt(); // duration
       
       tone(BUZZERPIN, f, d); // play the sound
       delay(d);
   }  
-  if(Serial.peek() == -1) tone(BUZZERPIN, 4000, 100);
+  if(SERIAL.peek() == -1) tone(BUZZERPIN, 4000, 100);
 }
