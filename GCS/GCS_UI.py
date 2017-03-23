@@ -20,8 +20,10 @@ except ImportError:
     from tkinter import ttk
     from tkinter import font
 
-#labelfont
+from time import sleep
+
 labelfont = 0
+stale_telem = False
 
 ## telem label text
 labelText = ['Mission Time:', 'Packet Count:', 'Alt. Sensor:', 'Pressure:', 'Speed:', 'Temperature:', 'Voltage:',
@@ -39,8 +41,7 @@ class Example(Frame):
          
         self.parent = parent
         
-        self.initUI()
-        
+        self.initUI()        
     
     def initUI(self):
       
@@ -65,15 +66,16 @@ class Example(Frame):
         dataArray  = []
         x = 5
         y = 50
+           
         for i in range (0, len(labelText)):
+            vals.append(tk.StringVar())
+            vals[i].set('0.000')
+            labels.append(Label(self, textvariable=vals[i], font=labelfont, width=5))
             l = Label(self, text=labelText[i], font=labelfont, width=12)
-            d = Label(self, text=vals[i], font=labelfont, width=5)
             u = Label(self, text='units', font=labelfont, width=5)
+            labels[i].place(x=x+155, y=y)
             l.place(x=x, y=y)
-            #d.place(x=x+155, y=y)
             u.place(x=x+230, y=y)
-            #labels.append(l)
-            dataArray.append(d)
             y = y + 50
 
         #canvas
@@ -105,29 +107,24 @@ class Example(Frame):
         canvas.create_oval(265, 150, 270, 155, fill='blue', outline='blue')
 
 def main():
-    root = Tk()
-    init(root) 
+    root = Tk() 
+    labelfont = font.Font(root=root, family="Times", size=16)
     root.geometry("900x600+100+100")
     app = Example(root)
+    root.after(1000, update_plot)
     root.mainloop()
-    for i in range(6):
-        #vals[0] += 1
-        root.update_idletasks()
 
-def init(root):
-    labelfont = font.Font(root=root, family="Times", size=16)
-    for i in range (0, len(labelText)):
-        vals.append(tk.StringVar())
-        vals[i].set('test')
-    updateTelem(root)
-
-def updateTelem(root):
-    x = 5
-    y = 50      
+#update plot if no new data has come in
+def update_plot(): 
     for i in range(0, len(labelText)):
-        labels.append(Label(root, text="test", font=labelfont, width=5))
-        labels[i].place(x=x, y=y)
-        y += 50
+        vals[i].set("got here")
+    #root.after(500, age_out) // invalidate telem after a
+
+def age_out():
+    stale_telem = True
+
+def xbee_read():
+    stale_telem = False
 
 if __name__ == '__main__':
     main()
