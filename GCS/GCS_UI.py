@@ -20,14 +20,29 @@ except ImportError:
     from tkinter import ttk
     from tkinter import font
 
-from time import sleep
+import serial
+
+import csv
+from time import sleep, strftime
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use('TkAgg')
+
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
+# implement the default mpl key bindings
+from matplotlib.backend_bases import key_press_handler
+from matplotlib.figure import Figure
 
 labelfont = 0
 stale_telem = False
+testint = 0
 
 ## telem label text
 labelText = ['Mission Time:', 'Packet Count:', 'Alt. Sensor:', 'Pressure:', 'Speed:', 'Temperature:', 'Voltage:',
     'Heading:', 'Software State:']
+
+# units for each label
+units = ['seconds', 'packets', 'meters', 'pascals', 'meters/s', 'deg. C', 'volts', 'degrees']
 # telem values
 vals = []
 
@@ -41,7 +56,15 @@ class Example(Frame):
          
         self.parent = parent
         
-        self.initUI()        
+        self.xList = [-100]
+        self.yList = [-100]       
+        self.x = 0
+        self.y = 0
+        self.count = 0
+        self.initUI()
+        self.initXbee()
+        self.xbee = None
+
     
     def initUI(self):
       
@@ -50,17 +73,19 @@ class Example(Frame):
 
         #Manual Release Button
         quitButton = Button(self, text="Manual Release", padx=5, pady=5, font=labelfont,
-            command=self.quit, bg="#ff5e5e")
+            command=self.buttonClick, bg="#ff5e5e")
         quitButton.place(x=10, y=500)
+        self.releaseLabel = Label(self, text="Ready to Release", font = labelfont, width=18, bg='#a0ff60')
+        self.releaseLabel.place(x=200, y=510)
 
         #Title and such
-        fonty = font.Font(underline=True, family="Times", size=16, weight="bold")
-        title = Label(self, text="Telemetry Field", font=fonty, width=12)
-        dat = Label(self, text='Value', font = fonty, width=5)
-        unit = Label(self, text='Units', font=fonty, width=5)
+        fonty = font.Font(family="Times", size=16, weight="bold")
+        title = Label(self, text="Field", font=fonty, width=5, bg="#FFFFFF")
+        dat = Label(self, text='Value', font = fonty, width=5, bg="#FFFFFF")
+        unit = Label(self, text='Units', font=fonty, width=5, bg="#FFFFFF")
         title.place(x=5, y=5)
-        dat.place(x=155, y=5)
-        unit.place(x=235, y=5)
+        dat.place(x=175, y=5)
+        unit.place(x=255, y=5)
 
         # Create labels
         dataArray  = []
@@ -70,61 +95,84 @@ class Example(Frame):
         for i in range (0, len(labelText)):
             vals.append(tk.StringVar())
             vals[i].set('0.000')
-            labels.append(Label(self, textvariable=vals[i], font=labelfont, width=5))
-            l = Label(self, text=labelText[i], font=labelfont, width=12)
-            u = Label(self, text='units', font=labelfont, width=5)
-            labels[i].place(x=x+155, y=y)
+            labels.append(Label(self, textvariable=vals[i], font=labelfont, width=5, bg='#ffffff'))
+            l = Label(self, text=labelText[i], font=labelfont, width=13, bg="#FFFFFF", anchor='w')
+            if i != len(labelText) - 1:
+                u = Label(self, text=units[i], font=labelfont, width=10, bg="#FFFFFF", anchor='w')
+                u.place(x=x+250, y=y)
+            labels[i].place(x=x+175, y=y)
             l.place(x=x, y=y)
-            u.place(x=x+230, y=y)
-            y = y + 50
+            y = y + 45
 
-        #canvas
-        canvas = Canvas(self, width=500, height=500, borderwidth=2)
-        canvas.create_line(250, 0, 250, 500)
-        canvas.create_line(0, 250, 500, 250)
-        canvas.place(x=350, y=10)
-        devLabel = Label(self, text='Displacement:', font=labelfont)
-        devLabel.place(x=400, y=520)
-        xPosLabel = Label(self, text='x:', font=labelfont)
-        xPos = Label(self, text='0m E', font=labelfont)
-        yPosLabel = Label(self, text='y:', font=labelfont)
-        yPos = Label(self, text='500m N', font=labelfont)    
-        xPosLabel.place(x=550, y=520)
-        yPosLabel.place(x=650, y=520)
-        xPos.place(x=570, y=520)
-        yPos.place(x=670, y=520)
+        #canvas 
+        my_dpi = 100
+        fig = Figure(figsize=(600/my_dpi, 600/my_dpi), dpi=my_dpi)
+        self.a = fig.add_subplot(1, 1, 1)
+        self.a.set_xlim(-550, 550)
+        self.a.set_ylim(-550, 550)
+        self.a.grid()
+        self.line, = self.a.plot(self.xList, self.yList, 'ro')
+        self.canvas  = FigureCanvasTkAgg(fig, master=self)
+        self.canvas.show()
+        self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.NONE, expand=0)
 
-        radius = 5
-        canvas.create_oval(245, 128, 255, 137, fill='red', outline='red')
-        canvas.create_oval(247, 247, 252, 252, fill='blue', outline='blue')
-        canvas.create_oval(260, 250, 265, 245, fill='blue', outline='blue')
-        canvas.create_oval(270, 240, 275, 245, fill='blue', outline='blue')
-        canvas.create_oval(275, 230, 280, 235, fill='blue', outline='blue')
-        canvas.create_oval(278, 225, 283, 220, fill='blue', outline='blue')
-        canvas.create_oval(280, 210, 285, 205, fill='blue', outline='blue')
-        canvas.create_oval(278, 195, 283, 190, fill='blue', outline='blue')
-        canvas.create_oval(273, 170, 278, 175, fill='blue', outline='blue')
-        canvas.create_oval(265, 150, 270, 155, fill='blue', outline='blue')
+    def buttonClick(self):
+        self.releaseLabel.config(text='Release Fired', bg='#ff5e5e')
+
+    def update_plot(self):
+        self.xList.append(self.xList[-1] + 20)
+        self.yList.append(self.yList[-1] + 20)
+        self.line.set_data(self.xList, self.yList)
+        self.parent.after(500, self.update_plot)
+        self.canvas.draw()
+
+    def initXbee(self):
+        # find and set xbee serial port
+        ports = ['COM%s' % (i + 1) for i in range(256)]
+        result = []
+        for port in ports:
+            try:
+                s = serial.Serial(port)
+                s.close()
+                result.append(port)
+                print(port)
+            except (OSError, serial.SerialException):
+                pass
+
+        for port in result:
+            print(port)
+
+        if len(result) > 0:
+            serial_port = serial.Serial(result[0], 9600)
+            self.xbee = XBee(serial_port, callback=self.update_telem)
+
+    def update_telem(self, data):
+        print(data)
+
+    def xbee_read(self):
+        stale_telem = False
+        #open csv and write new data
+        with open('telem' + strftime('%d.%m.%y') + '.csv', 'a', newline='') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow(['test Param', str(self.count)])
+        self.parent.after(250, self.xbee_read)
 
 def main():
     root = Tk() 
     labelfont = font.Font(root=root, family="Times", size=16)
-    root.geometry("900x600+100+100")
+    root.geometry("1000x600+100+100")
     app = Example(root)
-    root.after(1000, update_plot)
+    root.after(1000, app.update_plot)
+    root.after(1000, app.xbee_read)
     root.mainloop()
 
 #update plot if no new data has come in
-def update_plot(): 
-    for i in range(0, len(labelText)):
-        vals[i].set("got here")
-    #root.after(500, age_out) // invalidate telem after a
+
 
 def age_out():
     stale_telem = True
 
-def xbee_read():
-    stale_telem = False
+
 
 if __name__ == '__main__':
     main()
