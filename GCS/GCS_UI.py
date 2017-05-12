@@ -21,6 +21,7 @@ except ImportError:
     from tkinter import font
 
 import serial
+import threading
 
 import csv
 from time import sleep, strftime
@@ -43,11 +44,16 @@ labelText = ['Mission Time:', 'Packet Count:', 'Alt. Sensor:', 'Pressure:', 'Spe
 
 # units for each label
 units = ['seconds', 'packets', 'meters', 'pascals', 'meters/s', 'deg. C', 'volts', 'degrees']
-# telem values
-vals = []
+
+# glider telem values
+glider_vals = []
+
+# canister telem values
+canister_vals = []
 
 #telem labels
-labels = []
+glider_labels = []
+canister_labels = []
 
 class Example(Frame):
   
@@ -62,8 +68,8 @@ class Example(Frame):
         self.y = 0
         self.count = 0
         self.initUI()
-        self.initXbee()
         self.xbee = None
+        self.initXbee()
 
     
     def initUI(self):
@@ -81,11 +87,13 @@ class Example(Frame):
         #Title and such
         fonty = font.Font(family="Times", size=16, weight="bold")
         title = Label(self, text="Field", font=fonty, width=5, bg="#FFFFFF")
-        dat = Label(self, text='Value', font = fonty, width=5, bg="#FFFFFF")
+        glider = Label(self, text='Glider', font = fonty, width=5, bg="#FFFFFF")
+        canister = Label(self, text='Canister', font = fonty, width=7, bg="#FFFFFF")
         unit = Label(self, text='Units', font=fonty, width=5, bg="#FFFFFF")
         title.place(x=5, y=5)
-        dat.place(x=175, y=5)
-        unit.place(x=255, y=5)
+        glider.place(x=175, y=5)
+        canister.place(x=250, y=5)
+        unit.place(x=345, y=5)
 
         # Create labels
         dataArray  = []
@@ -93,14 +101,18 @@ class Example(Frame):
         y = 50
            
         for i in range (0, len(labelText)):
-            vals.append(tk.StringVar())
-            vals[i].set('0.000')
-            labels.append(Label(self, textvariable=vals[i], font=labelfont, width=5, bg='#ffffff'))
+            glider_vals.append(tk.StringVar())
+            canister_vals.append(tk.StringVar())
+            glider_vals[i].set('0.000')
+            canister_vals[i].set('0.000')
+            glider_labels.append(Label(self, textvariable=glider_vals[i], font=labelfont, width=5, bg='#ffffff'))
+            canister_labels.append(Label(self, textvariable=canister_vals[i], font=labelfont, width=5, bg='#ffffff'))
             l = Label(self, text=labelText[i], font=labelfont, width=13, bg="#FFFFFF", anchor='w')
             if i != len(labelText) - 1:
                 u = Label(self, text=units[i], font=labelfont, width=10, bg="#FFFFFF", anchor='w')
-                u.place(x=x+250, y=y)
-            labels[i].place(x=x+175, y=y)
+                u.place(x=x+345, y=y)
+            glider_labels[i].place(x=x+175, y=y)
+            canister_labels[i].place(x=x+250, y=y)
             l.place(x=x, y=y)
             y = y + 45
 
@@ -118,6 +130,10 @@ class Example(Frame):
 
     def buttonClick(self):
         self.releaseLabel.config(text='Release Fired', bg='#ff5e5e')
+        if self.xbee != None:
+            self.xbee.write("test send\n".encode())
+        else:
+            print("ERROR !!NO XBEE!!")
 
     def update_plot(self):
         self.xList.append(self.xList[-1] + 20)
@@ -143,14 +159,20 @@ class Example(Frame):
             print(port)
 
         if len(result) > 0:
-            serial_port = serial.Serial(result[0], 9600)
-            self.xbee = XBee(serial_port, callback=self.update_telem)
+            serial_port = serial.Serial(result[0], 19200)
+            self.xbee = serial_port;
+            thread = threading.Thread(target = xbee_read, args=(serial_port,))
+            thread.start()
 
     def update_telem(self, data):
         print(data)
 
     def xbee_read(self):
         stale_telem = False
+
+        if self.xbee != None:
+            reading = self.xbee.readline().decode()
+            print(reading)
         #open csv and write new data
         with open('telem' + strftime('%d.%m.%y') + '.csv', 'a', newline='') as csvfile:
             csvwriter = csv.writer(csvfile)
@@ -160,7 +182,7 @@ class Example(Frame):
 def main():
     root = Tk() 
     labelfont = font.Font(root=root, family="Times", size=16)
-    root.geometry("1000x600+100+100")
+    root.geometry("1050x600+100+100")
     app = Example(root)
     root.after(1000, app.update_plot)
     root.after(1000, app.xbee_read)
