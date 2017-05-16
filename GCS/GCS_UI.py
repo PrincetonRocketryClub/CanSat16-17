@@ -22,6 +22,8 @@ except ImportError:
 
 import serial
 import threading
+import time
+import math
 
 import csv
 from time import sleep, strftime
@@ -40,16 +42,16 @@ testint = 0
 
 ## telem label text
 labelText = ['Mission Time:', 'Packet Count:', 'Alt. Sensor:', 'Pressure:', 'Speed:', 'Temperature:', 'Voltage:',
-    'Heading:', 'Software State:']
+    'Heading:', 'Software State:', 'Picture count']
 
 # units for each label
-units = ['seconds', 'packets', 'meters', 'pascals', 'meters/s', 'deg. C', 'volts', 'degrees']
+units = ['seconds', 'packets', 'meters', 'pascals', 'meters/s', 'deg. C', 'volts', 'degrees', 'state', 'Pictures']
 
 # glider telem values
 glider_vals = []
 
 # canister telem values
-canister_vals = []
+container_vals = []
 
 #telem labels
 glider_labels = []
@@ -70,8 +72,10 @@ class Example(Frame):
         self.initUI()
         self.xbee = None
         self.initXbee()
-
-    
+        self.last_packet_time = 0
+        self.lastX = 0
+        self.lastY = 0
+ 
     def initUI(self):
       
         self.parent.title("Flying Tigers Ground Control Station")
@@ -102,13 +106,13 @@ class Example(Frame):
            
         for i in range (0, len(labelText)):
             glider_vals.append(tk.StringVar())
-            canister_vals.append(tk.StringVar())
+            container_vals.append(tk.StringVar())
             glider_vals[i].set('0.000')
-            canister_vals[i].set('0.000')
+            container_vals[i].set('0.000')
             glider_labels.append(Label(self, textvariable=glider_vals[i], font=labelfont, width=5, bg='#ffffff'))
-            canister_labels.append(Label(self, textvariable=canister_vals[i], font=labelfont, width=5, bg='#ffffff'))
+            canister_labels.append(Label(self, textvariable=container_vals[i], font=labelfont, width=5, bg='#ffffff'))
             l = Label(self, text=labelText[i], font=labelfont, width=13, bg="#FFFFFF", anchor='w')
-            if i != len(labelText) - 1:
+            if i != len(labelText):
                 u = Label(self, text=units[i], font=labelfont, width=10, bg="#FFFFFF", anchor='w')
                 u.place(x=x+345, y=y)
             glider_labels[i].place(x=x+175, y=y)
@@ -136,11 +140,16 @@ class Example(Frame):
             print("ERROR !!NO XBEE!!")
 
     def update_plot(self):
-        self.xList.append(self.xList[-1] + 20)
-        self.yList.append(self.yList[-1] + 20)
+        self.set_coords()
         self.line.set_data(self.xList, self.yList)
         self.parent.after(500, self.update_plot)
         self.canvas.draw()
+
+    def set_coords(self):
+        self.x = self.x + math.cos(float(glider_vals[7].get())) * float(glider_vals[4].get())
+        self.y = self.y + math.sin(float(glider_vals[7].get())) * float(glider_vals[4].get())
+        self.xList.append(self.x + 10)
+        self.yList.append(self.y + 10)
 
     def initXbee(self):
         # find and set xbee serial port
@@ -166,13 +175,45 @@ class Example(Frame):
 
     def update_telem(self, data):
         print(data)
+        split_vals = data.split(",")
+        ## 4234, GLIDER, 
+        if (split_vals[1] == 'GLIDER'):
+            #do glider telem
+            glider_vals[0].set(split_vals[2]) #mission time
+            glider_vals[1].set(split_vals[3]) #packet count
+            glider_vals[2].set(split_vals[4])   #altitude
+            glider_vals[3].set(split_vals[5])   #pressure
+            glider_vals[4].set(split_vals[6])   #speed
+            glider_vals[5].set(split_vals[7])   #Temperature
+            glider_vals[6].set(split_vals[9])   #voltage
+            heading = str(math.radians(float(split_vals[10])))
+            glider_vals[7].set(heading)  #heading
+            glider_vals[8].set(split_vals[11])  #state
+            glider_vals[9].set(split_vals[12])  #picture count
+        elif (split_vals[1] == 'CONTAINER'):
+            #do container telem
+            container_vals[0].set(split_vals[2]) #mission time
+            container_vals[1].set(split_vals[3]) #packet count
+            container_vals[2].set(split_vals[4])   #altitude
+            container_vals[3].set(split_vals[5])   #pressure
+            container_vals[4].set(split_vals[6])   #speed
+            container_vals[5].set(split_vals[7])   #Temperature
+            container_vals[6].set(split_vals[9])   #voltage
+            heading = str(math.radians(float(split_vals[10])))
+            container_vals[7].set(heading)  #heading
+            container_vals[8].set(split_vals[11])  #state
+        else:
+            pass
+            #bad value
+
 
     def xbee_read(self):
         stale_telem = False
 
         if self.xbee != None:
             reading = self.xbee.readline().decode()
-            print(reading)
+            self.last_packet_time = int(round(time.time() * 1000))
+            update_telem(reading)
         #open csv and write new data
         with open('telem' + strftime('%d.%m.%y') + '.csv', 'a', newline='') as csvfile:
             csvwriter = csv.writer(csvfile)
