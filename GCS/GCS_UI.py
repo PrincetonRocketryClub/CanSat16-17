@@ -196,7 +196,6 @@ class Example(Frame):
             glider_vals[9].set(split_vals[12])  #picture count
 
             file_str += ".glider"
-            
 
         elif (split_vals[1] == 'CONTAINER'):
             #do container telem
@@ -204,7 +203,7 @@ class Example(Frame):
             container_vals[1].set(split_vals[3]) #packet count
             container_vals[2].set(split_vals[4])   #altitude
             # get ground pressure
-            if (self.ground_pressure_count) < 6):
+            if self.ground_pressure_count < 6:
                self.ground_pressure *= self.ground_pressure_count
                self.ground_pressure += float(split_vals[4])
                self.ground_pressure_count += 1
