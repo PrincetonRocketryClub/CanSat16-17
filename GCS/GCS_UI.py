@@ -75,6 +75,9 @@ class Example(Frame):
         self.last_packet_time = 0
         self.lastX = 0
         self.lastY = 0
+        self.ground_pressure = 0
+        self.ground_pressure_count = 0
+        self.lines_written = 0
  
     def initUI(self):
       
@@ -135,7 +138,7 @@ class Example(Frame):
     def buttonClick(self):
         self.releaseLabel.config(text='Release Fired', bg='#ff5e5e')
         if self.xbee != None:
-            self.xbee.write("test send\n".encode())
+            self.xbee.write("releasing".encode())
         else:
             print("ERROR !!NO XBEE!!")
 
@@ -176,6 +179,7 @@ class Example(Frame):
     def update_telem(self, data):
         print(data)
         split_vals = data.split(",")
+        file_str = strftime("%d.%m.%y")
         ## 4234, GLIDER, 
         if (split_vals[1] == 'GLIDER'):
             #do glider telem
@@ -190,11 +194,22 @@ class Example(Frame):
             glider_vals[7].set(heading)  #heading
             glider_vals[8].set(split_vals[11])  #state
             glider_vals[9].set(split_vals[12])  #picture count
+
+            file_str += ".glider"
+            
+
         elif (split_vals[1] == 'CONTAINER'):
             #do container telem
             container_vals[0].set(split_vals[2]) #mission time
             container_vals[1].set(split_vals[3]) #packet count
             container_vals[2].set(split_vals[4])   #altitude
+            # get ground pressure
+            if (self.ground_pressure_count) < 6):
+               self.ground_pressure *= self.ground_pressure_count
+               self.ground_pressure += float(split_vals[4])
+               self.ground_pressure_count += 1
+               self.ground_pressure /= self.ground_pressure_count      
+
             container_vals[3].set(split_vals[5])   #pressure
             container_vals[4].set(split_vals[6])   #speed
             container_vals[5].set(split_vals[7])   #Temperature
@@ -202,10 +217,16 @@ class Example(Frame):
             heading = str(math.radians(float(split_vals[10])))
             container_vals[7].set(heading)  #heading
             container_vals[8].set(split_vals[11])  #state
+            
+            file_str += '.container'
+
         else:
             pass
             #bad value
 
+        with open('telem.' + file_str + '.csv', 'a', newline='') as csvfile:
+                 csvwriter = csv.writer(csvfile)
+                 csvwriter.writerow(split_vals)
 
     def xbee_read(self):
         stale_telem = False
@@ -215,9 +236,6 @@ class Example(Frame):
             self.last_packet_time = int(round(time.time() * 1000))
             update_telem(reading)
         #open csv and write new data
-        with open('telem' + strftime('%d.%m.%y') + '.csv', 'a', newline='') as csvfile:
-            csvwriter = csv.writer(csvfile)
-            csvwriter.writerow(['test Param', str(self.count)])
         self.parent.after(250, self.xbee_read)
 
 def main():
@@ -231,11 +249,8 @@ def main():
 
 #update plot if no new data has come in
 
-
 def age_out():
     stale_telem = True
-
-
 
 if __name__ == '__main__':
     main()
