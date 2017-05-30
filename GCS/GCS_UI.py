@@ -173,8 +173,6 @@ class Example(Frame):
         if len(result) > 0:
             serial_port = serial.Serial(result[0], 19200)
             self.xbee = serial_port;
-            thread = threading.Thread(target = self.xbee_read, args=(serial_port,))
-            thread.start()
 
     def update_telem(self, data):
         print(data)
