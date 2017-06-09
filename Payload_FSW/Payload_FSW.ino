@@ -2,8 +2,8 @@
 #include <math.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_HMC5883_U.h> // Magnetometer
-#include <Adafruit_BME280.h> // Barometer/Altimeter/Thermometer
-#include <Adafruit_VC0706.h> // camera
+#include "Adafruit_BME280.h" // Barometer/Altimeter/Thermometer
+#include "Adafruit_VC0706.h" // camera
 #include <string.h>
 #include <SerialFlash.h> // flash
 #include <EEPROM.h> // EEPROM built into the teensy
