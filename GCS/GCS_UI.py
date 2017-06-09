@@ -69,8 +69,8 @@ class Example(Frame):
         self.x = 0
         self.y = 0
         self.count = 0
-        self.initUI()
         self.xbee = None
+        self.initUI()
         self.initXbee()
         self.last_packet_time = 0
         self.lastX = 0
