@@ -64,8 +64,8 @@ class Example(Frame):
          
         self.parent = parent
         
-        self.xList = [-100]
-        self.yList = [-100]       
+        self.xList = []
+        self.yList = []       
         self.x = 0
         self.y = 0
         self.count = 0
@@ -134,6 +134,9 @@ class Example(Frame):
         self.canvas  = FigureCanvasTkAgg(fig, master=self)
         self.canvas.show()
         self.canvas.get_tk_widget().pack(side=tk.RIGHT, fill=tk.NONE, expand=0)
+
+        thread = threading.Thread(target = self.read_xbee_repeatedly)
+        thread.start()
 
     def buttonClick(self):
         self.releaseLabel.config(text='Release Fired', bg='#ff5e5e')
@@ -225,15 +228,16 @@ class Example(Frame):
                  csvwriter = csv.writer(csvfile)
                  csvwriter.writerow(split_vals)
 
+    def read_xbee_repeatedly(self):
+    	while True:
+    		self.xbee_read()
+
     def xbee_read(self):
         stale_telem = False
-
         if self.xbee != None:
             reading = self.xbee.readline().decode()
             self.last_packet_time = int(round(time.time() * 1000))
             update_telem(reading)
-        #open csv and write new data
-        self.parent.after(250, self.xbee_read)
 
 def main():
     root = Tk() 
@@ -241,7 +245,6 @@ def main():
     root.geometry("1050x600+100+100")
     app = Example(root)
     root.after(1000, app.update_plot)
-    root.after(1000, app.xbee_read)
     root.mainloop()
 
 #update plot if no new data has come in
